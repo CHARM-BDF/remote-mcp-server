@@ -2,57 +2,61 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+interface PubMedResponse {
+	title?: string;
+	abstract?: string;
+	error?: string;
+}
+
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
 	server = new McpServer({
-		name: "Authless Calculator",
+		name: "PubMed Abstract Fetcher",
 		version: "1.0.0",
 	});
 
 	async init() {
-		// Simple addition tool
+		// PubMed abstract fetcher tool
 		this.server.tool(
-			"add",
-			{ a: z.number(), b: z.number() },
-			async ({ a, b }) => ({
-				content: [{ type: "text", text: String(a + b) }],
-			})
-		);
+			"get_pubmed_abstract",
+			{ pubmed_id: z.string() },
+			async ({ pubmed_id }) => {
+				try {
+					const response = await fetch("https://medikanren-gpt-edu.livecode.ch/pubmed", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({ pubmed_id }),
+					});
 
-		// Calculator tool with multiple operations
-		this.server.tool(
-			"calculate",
-			{
-				operation: z.enum(["add", "subtract", "multiply", "divide"]),
-				a: z.number(),
-				b: z.number(),
-			},
-			async ({ operation, a, b }) => {
-				let result: number;
-				switch (operation) {
-					case "add":
-						result = a + b;
-						break;
-					case "subtract":
-						result = a - b;
-						break;
-					case "multiply":
-						result = a * b;
-						break;
-					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
-						result = a / b;
-						break;
+					const data = (await response.json()) as PubMedResponse;
+
+					if (data.error) {
+						return {
+							content: [{ type: "text", text: `Error: ${data.error}` }],
+						};
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Title: ${data.title}\n\nAbstract: ${data.abstract}`,
+							},
+						],
+					};
+				} catch (error: unknown) {
+					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error fetching PubMed abstract: ${errorMessage}`,
+							},
+						],
+					};
 				}
-				return { content: [{ type: "text", text: String(result) }] };
 			}
 		);
 	}
